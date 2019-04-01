@@ -8,20 +8,34 @@
 #include <QRegularExpression>
 #include <QValidator>
 
+#include <QSettings>
+
 MainWindow::MainWindow(QWidget *parent) :
-    QMainWindow(parent)
+    QMainWindow(parent), _settingsFileLocation(QApplication::applicationDirPath() + "/settings.ini")
 {
     setupUi(this);
 
     setFixedSize(width(), height());
 
-    connect(connectPushButton, &QPushButton::clicked, this, &MainWindow::onConnectButtonClicked);
-    connect(sendButton, &QPushButton::clicked, this, &MainWindow::onSendButtonClicked);
+    setupWidgets();
+    setupConnections();
 
-    connect(&_socket, &QTcpSocket::connected, this, &MainWindow::onSocketConnected);
-    connect(&_socket, &QTcpSocket::disconnected, this, &MainWindow::onSocketDisconnected);
-    connect(&_socket, &QTcpSocket::readyRead, this, &MainWindow::onSocketReadyRead);
+    loadSettings();
+}
 
+MainWindow::~MainWindow()
+{
+    _client.disconnect();
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    saveSettings();
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::setupWidgets()
+{
     const QString numberRange = QString("[1-9][0-9]?|1[0-9][0-9]|2[0-5][0-5]");
 
     QRegularExpression IPrx(QString("^(%1)\\.(0|%2)\\.(0|%3)\\.(0|%4)$").arg(numberRange, numberRange, numberRange, numberRange));
@@ -30,37 +44,67 @@ MainWindow::MainWindow(QWidget *parent) :
     hostLineEdit->setValidator(IPvalidator);
 }
 
-MainWindow::~MainWindow()
+void MainWindow::setupConnections()
 {
-    _socket.disconnectFromHost();
+    connect(connectPushButton, &QPushButton::clicked, this, &MainWindow::onConnectButtonClicked);
+    connect(sendButton, &QPushButton::clicked, this, &MainWindow::onSendButtonClicked);
+
+    connect(&_client, &Client::connected, this, &MainWindow::onClientConnected);
+    connect(&_client, &Client::disconnected, this, &MainWindow::onClientDisconnected);
+    connect(&_client, &Client::receiveData, this, &MainWindow::onClientReceiveData);
+    connect(&_client, &Client::socketError, this, [this](QTcpSocket::SocketError error){
+        switch(error){
+        case QTcpSocket::ConnectionRefusedError:
+            windowStatusBar->showMessage(QLatin1String("Connection Refused."), 2000);
+            break;
+        case QTcpSocket::RemoteHostClosedError:
+            windowStatusBar->showMessage(QLatin1String("Remove Host has been closed."), 2000);
+            break;
+        default:
+            break;
+        }
+    });
+
 }
 
 void MainWindow::onConnectButtonClicked()
 {
-    if(_socket.state() != QTcpSocket::ConnectedState){
-        _socket.connectToHost(QHostAddress(hostLineEdit->text().trimmed()), portSpinBox->text().toInt());
-        _socket.waitForConnected(5000);
+    if(!_client.isConnected()){
+        _client.connect(QHostAddress(hostLineEdit->text().trimmed()), portSpinBox->text().toInt());
+
+        connectPushButton->setText("Trying...");
+        connectPushButton->setEnabled(false);
     }
     else{
-        _socket.disconnectFromHost();
+        _client.disconnect();
     }
 }
 
-void MainWindow::onSocketConnected()
+void MainWindow::onClientConnected()
 {
     connectPushButton->setText(QStringLiteral("Disconnect"));
+    connectPushButton->setEnabled(true);
+
     hostLineEdit->setEnabled(false);
     portSpinBox->setEnabled(false);
+
+    windowStatusBar->showMessage(QLatin1String("Connected."), 2000);
 }
 
-void MainWindow::onSocketDisconnected()
+void MainWindow::onClientDisconnected()
 {
     connectPushButton->setText(QStringLiteral("Connect"));
+    connectPushButton->setEnabled(true);
+
     hostLineEdit->setEnabled(true);
     portSpinBox->setEnabled(true);
+
     contentLabel->clear();
+
     sendLineEdit->setEnabled(false);
     sendButton->setEnabled(false);
+
+    windowStatusBar->showMessage(QLatin1String("Disconnected."), 2000);
 }
 
 void MainWindow::onSendButtonClicked()
@@ -71,36 +115,13 @@ void MainWindow::onSendButtonClicked()
     jsonObject["value"] = sendLineEdit->text();
     jsonDocument.setObject(jsonObject);
 
-    QDataStream socketStream(&_socket);
-    socketStream.setVersion(QDataStream::Qt_5_11);
-    socketStream << jsonDocument.toJson(QJsonDocument::Compact);
+    _client.sendData(jsonDocument.toJson(QJsonDocument::Compact));
 }
 
-void MainWindow::onSocketReadyRead()
+void MainWindow::onClientReceiveData(const QByteArray &data)
 {
-    QByteArray data;
+    QJsonObject jsonObject = QJsonDocument::fromJson(data).object();
 
-    QDataStream socketStream(&_socket);
-    socketStream.setVersion(QDataStream::Qt_5_11);
-
-    for (;;) {
-        socketStream.startTransaction();
-        socketStream >> data;
-        if (socketStream.commitTransaction()) {
-            QJsonParseError parseError;
-            const QJsonDocument jsonDoc = QJsonDocument::fromJson(data, &parseError);
-            if (parseError.error == QJsonParseError::NoError) {
-                if (jsonDoc.isObject())
-                    readJson(jsonDoc.object());
-            }
-        } else {
-            break;
-        }
-    }
-}
-
-void MainWindow::readJson(const QJsonObject &jsonObject)
-{
     const QJsonValue typeVal = jsonObject.value(QLatin1String("type"));
     if (typeVal.isNull() || !typeVal.isString())
         return;
@@ -120,4 +141,32 @@ void MainWindow::readJson(const QJsonObject &jsonObject)
         sendLineEdit->setEnabled(false);
         sendButton->setEnabled(false);
     }
+}
+
+void MainWindow::loadSettings()
+{
+    QSettings settings(_settingsFileLocation, QSettings::IniFormat);
+
+    settings.beginGroup("server");
+    const QString serverHost = settings.value("host", "127.0.0.1").toString();
+    const int serverPort = settings.value("port", 1024).toInt();
+    settings.endGroup();
+
+    hostLineEdit->setText(serverHost);
+    portSpinBox->setValue(serverPort);
+
+}
+
+void MainWindow::saveSettings()
+{
+    QSettings settings(_settingsFileLocation, QSettings::IniFormat);
+
+    const QString serverHost = hostLineEdit->text();
+
+    settings.beginGroup("server");
+    settings.setValue("host", serverHost.isEmpty() ? QLatin1String("127.0.0.1") : serverHost);
+    settings.setValue("port", portSpinBox->value());
+    settings.endGroup();
+
+    settings.sync();
 }

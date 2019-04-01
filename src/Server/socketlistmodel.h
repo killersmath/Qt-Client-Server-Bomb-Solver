@@ -15,6 +15,7 @@ public:
     typedef QList<DataInfo> DataList;
 
     SocketListModel(QObject *parent);
+    ~SocketListModel();
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     //int columnCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
@@ -23,11 +24,11 @@ public:
     void removeSocket(SocketThread *socketThread);
     void clear();
 
-    const DataList getData() const;
+    const DataList dataList() const;
 
 signals:
-    void socketAdd(const QString& host, quint16 port);
-    void socketRem(const QString& host, quint16 port);
+    void socketAdded(const QString& host, quint16 port);
+    void socketRemoved(const QString& host, quint16 port);
 
 private:
     DataList _socketList;

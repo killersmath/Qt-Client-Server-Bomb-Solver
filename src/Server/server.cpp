@@ -7,6 +7,8 @@
 #include <QPair>
 #include <QRandomGenerator>
 
+#include <QScopedPointer>
+
 Server::Server(QObject *parent) : QTcpServer(parent), _listModel(new SocketListModel(this))
 {
 
@@ -33,21 +35,26 @@ SocketListModel *Server::listModel() const
 
 void Server::incomingConnection(qintptr socketDescriptor)
 {
-    SocketThread *socketThread = new SocketThread;
+    QScopedPointer<QTcpSocket> socketPointer(new QTcpSocket); // auto desctruction
 
-    if(!socketThread->setSocketDescriptor(socketDescriptor)){
-        qDebug() << "Socket Descriptor Error";
-        socketThread->deleteLater();
+    // set the ID
+    if(!socketPointer->setSocketDescriptor(socketDescriptor))
+    {
+        emit socketError(socketPointer->error());
         return;
     }
+
+    SocketThread *socketThread = new SocketThread(socketPointer.get());
 
     connect(socketThread, &SocketThread::finished, this, &Server::onSocketThreadFinished);
     connect(socketThread, &SocketThread::finished, socketThread, &SocketThread::deleteLater);
     connect(socketThread, &SocketThread::receiveData, this, &Server::onReveiceData);
 
-    _listModel->addSocket(qMakePair(socketThread->peerHost(), socketThread->peerPort()),socketThread);
+    _listModel->addSocket(qMakePair(socketPointer->peerAddress().toString(), socketPointer->peerPort()),socketThread);
 
     socketThread->start();
+
+    socketPointer.take(); // remove the pointer from scope pointer
 }
 
 void Server::onSocketThreadFinished()
@@ -96,9 +103,7 @@ void Server::onReveiceData(const QByteArray &data)
 
 void Server::onBombDefused()
 {
-    qDebug() << "Called";
-
-    SocketListModel::DataList dataList = _listModel->getData();
+    SocketListModel::DataList dataList = _listModel->dataList();
 
     for(SocketListModel::DataInfo data : dataList){
         QJsonDocument doc;
@@ -112,7 +117,7 @@ void Server::onBombDefused()
 
 void Server::onBombExplosed()
 {
-    SocketListModel::DataList dataList = _listModel->getData();
+    SocketListModel::DataList dataList = _listModel->dataList();
 
     for(SocketListModel::DataInfo data : dataList){
         QJsonDocument doc;
@@ -126,7 +131,7 @@ void Server::onBombExplosed()
 
 void Server::startChallenge()
 {
-    SocketListModel::DataList dataList = _listModel->getData();
+    SocketListModel::DataList dataList = _listModel->dataList();
 
     _questions.clear();
 

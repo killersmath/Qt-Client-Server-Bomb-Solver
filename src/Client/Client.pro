@@ -1,17 +1,31 @@
-# Check if the config file exists
-! include( ../common.pri ) {
+# Importing Config File
+
+! include( ../Common/Config.pri) {
     error( "Couldn't find the common.pri file!" )
 }
 
 TARGET = client
 TEMPLATE = app
 
+DEFINES += CLIENT_SIDE # Client Socket Thread Side Compilation
+
+DEPENDPATH += $$PWD/../Common/
+INCLUDEPATH += $$PWD/../Common/
+
 SOURCES += \
         main.cpp \
-        mainwindow.cpp
+        mainwindow.cpp \
+    client.cpp
 
 HEADERS += \
-        mainwindow.h
+        mainwindow.h \
+    client.h
 
 FORMS += \
         mainwindow.ui
+
+# Import Common Sources
+
+! include( ../Common/Common.pri ) {
+    error( "Couldn't find the common.pri file!" )
+}

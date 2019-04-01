@@ -11,13 +11,18 @@
 #include <QTcpSocket>
 #include <QTimer>
 
+#include <QSettings>
+#include <QDir>
+
 MainWindow::MainWindow(QWidget *parent) :
-    QMainWindow(parent)
+    QMainWindow(parent), _settingsFileLocation(QApplication::applicationDirPath() + "/settings.ini")
 {
     setupUi(this);
 
     setupWidgets();
     setupConnections();
+
+    loadSettings();
 }
 
 MainWindow::~MainWindow()
@@ -25,9 +30,14 @@ MainWindow::~MainWindow()
 
 }
 
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    saveSettings();
+    QMainWindow::closeEvent(event);
+}
+
 void MainWindow::setupWidgets()
 {
-
     // Ip Validator
     const QString numberRange = QString("[1-9][0-9]?|1[0-9][0-9]|2[0-5][0-5]");
     QRegularExpression IPrx(QString("^(%1)\\.(0|%2)\\.(0|%3)\\.(0|%4)$").arg(numberRange, numberRange, numberRange, numberRange));
@@ -36,14 +46,13 @@ void MainWindow::setupWidgets()
 
     // Looking for Avaliable IP
 
-    const QHostAddress& localhost = QHostAddress(QHostAddress::LocalHost);
-    foreach (const QHostAddress& address, QNetworkInterface::allAddresses()) {
-        if (address.protocol() == QAbstractSocket::IPv4Protocol && address != localhost){
-            hostLineEdit->setText(address.toString());
-            break;
-        }
-    }
-
+    //    const QHostAddress& localhost = QHostAddress(QHostAddress::LocalHost);
+    //    foreach (const QHostAddress& address, QNetworkInterface::allAddresses()) {
+    //        if (address.protocol() == QAbstractSocket::IPv4Protocol && address != localhost){
+    //            hostLineEdit->setText(address.toString());
+    //            break;
+    //        }
+    //    }
 
     listView->setModel(_server.listModel());
 
@@ -76,14 +85,20 @@ void MainWindow::setupWidgets()
 
     _goodEndScene = new QGraphicsScene(this);
     _goodEndScene->setItemIndexMethod(QGraphicsScene::NoIndex);
-    _goodEndScene->addText("The Bomb has Been Defused", QFont("Arial", 18));
+
+    QGraphicsTextItem* GTitem = _goodEndScene->addText("The Bomb has Been Defused", QFont("Arial", 18));
+    GTitem->setDefaultTextColor(QColor(0, 255, 0));
 
     _goodEndScene->setSceneRect(_goodEndScene->itemsBoundingRect());
 
 
     _badEndScene = new QGraphicsScene(this);
     _badEndScene->setItemIndexMethod(QGraphicsScene::NoIndex);
-    _badEndScene->addText("KABBUMMM", QFont("Arial", 18));
+
+    QGraphicsTextItem* BTitem = _badEndScene->addText("KABBUMMM", QFont("Arial", 18));
+    BTitem->setDefaultTextColor(QColor(255, 0, 0));
+
+
     _badEndScene->setSceneRect(_badEndScene->itemsBoundingRect());
 
     //
@@ -133,15 +148,66 @@ void MainWindow::setupConnections()
 
     connect(&_server, &Server::challangeSolved, _bomb, &Bomb::defused);
 
-    connect(_server.listModel(), &SocketListModel::socketAdd, this, [this](const QString &host, quint16 port){
-        const QString message = QString("%1:2 has been connected.").arg(host).arg(port);
+    connect(_server.listModel(), &SocketListModel::socketAdded, this, [this](const QString &host, quint16 port){
+        const QString message = QString("%1:%2 has been connected.").arg(host).arg(port);
         windowStatusBar->showMessage(message, 2000);
     });
 
-    connect(_server.listModel(), &SocketListModel::socketRem, this, [this](const QString &host, quint16 port){
-        const QString message = QString("%1:2 has been disconnected.").arg(host).arg(port);
+    connect(_server.listModel(), &SocketListModel::socketRemoved, this, [this](const QString &host, quint16 port){
+        const QString message = QString("%1:%2 has been disconnected.").arg(host).arg(port);
         windowStatusBar->showMessage(message, 2000);
     });
+}
+
+void MainWindow::loadSettings()
+{
+    QSettings settings(_settingsFileLocation, QSettings::IniFormat);
+
+    settings.beginGroup("window");
+
+    if(settings.contains("geometry"))
+      restoreGeometry(settings.value("geometry").toByteArray());
+
+    if(settings.contains("state"))
+      restoreState(settings.value("state").toByteArray());
+
+    settings.endGroup();
+
+    settings.beginGroup("server");
+    const QString serverHost = settings.value("host", "127.0.0.1").toString();
+    const int serverPort = settings.value("port", 1024).toInt();
+    settings.endGroup();
+
+    settings.beginGroup("bomb");
+    const int bombTimer = settings.value("timer", 1024).toInt();
+    settings.endGroup();
+
+    hostLineEdit->setText(serverHost);
+    portSpinBox->setValue(serverPort);
+    bombTimerSpinBox->setValue(bombTimer);
+}
+
+void MainWindow::saveSettings()
+{
+    QSettings settings(_settingsFileLocation, QSettings::IniFormat);
+
+    const QString serverHost = hostLineEdit->text();
+
+    settings.beginGroup("window");
+    settings.setValue("geometry", saveGeometry());
+    settings.setValue("state", saveState());
+    settings.endGroup();
+
+    settings.beginGroup("server");
+    settings.setValue("host", serverHost.isEmpty() ? QLatin1String("127.0.0.1") : serverHost);
+    settings.setValue("port", portSpinBox->value());
+    settings.endGroup();
+
+    settings.beginGroup("bomb");
+    settings.setValue("timer", bombTimerSpinBox->value());
+    settings.endGroup();
+
+    settings.sync();
 }
 
 void MainWindow::newGameButtonClicked()

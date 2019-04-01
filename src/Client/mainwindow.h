@@ -7,8 +7,10 @@
 #include <QJsonObject>
 #include <QTcpSocket>
 
+#include "client.h"
+
 namespace Ui {
-  class MainWindow;
+class MainWindow;
 }
 
 class MainWindow : public QMainWindow, private Ui::MainWindow
@@ -19,18 +21,28 @@ public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
 
+protected:
+    void closeEvent(QCloseEvent *event);
+
 public slots:
     void onConnectButtonClicked();
-    void onSocketConnected();
-    void onSocketDisconnected();
+
+    void onClientConnected();
+    void onClientDisconnected();
 
     void onSendButtonClicked();
-    void onSocketReadyRead();
+
+    void onClientReceiveData(const QByteArray &data);
+
 private:
-    QTcpSocket _socket;
+    const QString _settingsFileLocation;
+    Client _client;
 
-    void readJson(const QJsonObject &jsonObject);
+    void setupWidgets();
+    void setupConnections();
 
+    void loadSettings();
+    void saveSettings();
 };
 
 #endif // MAINWINDOW_H

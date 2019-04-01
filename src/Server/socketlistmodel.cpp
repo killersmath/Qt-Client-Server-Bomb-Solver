@@ -8,6 +8,11 @@ SocketListModel::SocketListModel(QObject *parent) : QAbstractListModel(parent)
 
 }
 
+SocketListModel::~SocketListModel()
+{
+    clear();
+}
+
 int SocketListModel::rowCount(const QModelIndex &/*parent*/) const
 {
     return _socketList.count();
@@ -41,7 +46,7 @@ void SocketListModel::addSocket(QPair<QString, quint16> socketInfo, SocketThread
     _socketList << qMakePair(socketInfo, socketThread);
     endInsertRows();
 
-    emit socketAdd(socketInfo.first, socketInfo.second);
+    emit socketAdded(socketInfo.first, socketInfo.second);
 }
 
 void SocketListModel::removeSocket(SocketThread *socketThread)
@@ -53,7 +58,7 @@ void SocketListModel::removeSocket(SocketThread *socketThread)
             _socketList.removeAt(i);
             beginRemoveRows(QModelIndex(), i, i);
 
-            emit socketRem(data.first.first, data.first.second);
+            emit socketRemoved(data.first.first, data.first.second);
             break;
         }
     }
@@ -61,17 +66,21 @@ void SocketListModel::removeSocket(SocketThread *socketThread)
 
 void SocketListModel::clear()
 {
+    if(!rowCount())
+        return;
+
     beginRemoveRows(QModelIndex(), 0, rowCount());
 
-    for(DataInfo info : qAsConst(_socketList)){
-        emit info.second->disconnectFromHost();
+    for(DataInfo socketData : qAsConst(_socketList)){
+        emit socketData.second->disconnectFromHost();
     }
 
     _socketList.clear();
     beginRemoveRows(QModelIndex(), 0, rowCount());
+
 }
 
-const SocketListModel::DataList SocketListModel::getData() const
+const SocketListModel::DataList SocketListModel::dataList() const
 {
     return _socketList;
 }

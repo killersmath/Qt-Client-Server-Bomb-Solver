@@ -31,6 +31,8 @@ protected:
 signals:
     void challangeSolved();
 
+    void socketError(QTcpSocket::SocketError error);
+
 public slots:
     void onSocketThreadFinished();
     void onReveiceData(const QByteArray& data);
@@ -42,7 +44,6 @@ private:
     SocketListModel *_listModel;
     QMap<SocketThread*,QPair<QString,int>> _questions;
 
-    int mode;
 };
 
 #endif // SERVER_H
