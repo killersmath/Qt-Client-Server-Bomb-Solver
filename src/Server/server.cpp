@@ -33,6 +33,31 @@ SocketListModel *Server::listModel() const
     return _listModel;
 }
 
+void Server::sendQuestions()
+{
+    SocketListModel::DataList dataList = _listModel->dataList();
+
+    _questions.clear();
+
+    for(SocketListModel::DataInfo data : dataList){
+        //int a = QRandomGenerator::global()->bounded(10, 120);
+        int a = 10;
+        int b = QRandomGenerator::global()->bounded(10, 120);
+        int answer = a*b;
+        const QString question = QString("%1 * %2").arg(a).arg(b);
+
+        // data.second == Socket*
+        _questions.insert(data.second, qMakePair(question, answer));
+
+        QJsonDocument doc;
+        QJsonObject obj;
+        obj["type"] = "question";
+        obj["text"] = question;
+        doc.setObject(obj);
+        data.second->sendData(doc.toJson(QJsonDocument::Compact));
+    }
+}
+
 void Server::incomingConnection(qintptr socketDescriptor)
 {
     QScopedPointer<QTcpSocket> socketPointer(new QTcpSocket); // auto desctruction
@@ -124,31 +149,6 @@ void Server::onBombExplosed()
         QJsonObject obj;
         obj["type"] = "bombstatus";
         obj["defused"] = false;
-        doc.setObject(obj);
-        data.second->sendData(doc.toJson(QJsonDocument::Compact));
-    }
-}
-
-void Server::startChallenge()
-{
-    SocketListModel::DataList dataList = _listModel->dataList();
-
-    _questions.clear();
-
-    for(SocketListModel::DataInfo data : dataList){
-        //int a = QRandomGenerator::global()->bounded(10, 120);
-        int a = 10;
-        int b = QRandomGenerator::global()->bounded(10, 120);
-        int answer = a*b;
-
-        const QString question = QString("%1 * %2").arg(a).arg(b);
-
-        _questions.insert(data.second, qMakePair(question, answer));
-
-        QJsonDocument doc;
-        QJsonObject obj;
-        obj["type"] = "question";
-        obj["text"] = question;
         doc.setObject(obj);
         data.second->sendData(doc.toJson(QJsonDocument::Compact));
     }

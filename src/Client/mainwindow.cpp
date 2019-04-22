@@ -10,6 +10,8 @@
 
 #include <QSettings>
 
+#include <QNetworkInterface>
+
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent), _settingsFileLocation(QApplication::applicationDirPath() + "/settings.ini")
 {
@@ -65,6 +67,7 @@ void MainWindow::setupConnections()
         }
     });
 
+    connect(sendLineEdit, &QLineEdit::returnPressed, sendButton, &QPushButton::click);
 }
 
 void MainWindow::onConnectButtonClicked()
@@ -148,9 +151,24 @@ void MainWindow::loadSettings()
     QSettings settings(_settingsFileLocation, QSettings::IniFormat);
 
     settings.beginGroup("server");
-    const QString serverHost = settings.value("host", "127.0.0.1").toString();
+    QString serverHost = settings.value("host", "").toString();
     const int serverPort = settings.value("port", 1024).toInt();
     settings.endGroup();
+
+    if(serverHost.isEmpty()){
+        QList<QHostAddress> ipAddressesList = QNetworkInterface::allAddresses();
+        // Find the first no local address
+        for (int i = 0; i < ipAddressesList.size(); ++i) {
+            if (ipAddressesList.at(i) != QHostAddress::LocalHost &&
+                ipAddressesList.at(i).toIPv4Address()) {
+                serverHost = ipAddressesList.at(i).toString();
+                break;
+            }
+        }
+        // If din't found, use Localhost address
+        if (serverHost.isEmpty())
+            serverHost = QHostAddress(QHostAddress::LocalHost).toString();
+    }
 
     hostLineEdit->setText(serverHost);
     portSpinBox->setValue(serverPort);

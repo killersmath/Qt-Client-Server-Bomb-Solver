@@ -1,10 +1,12 @@
-QT       += core gui network widgets
+QT          += core gui network widgets
 
-CONFIG += c++11
+CONFIG      += c++11
 
-DESTDIR      = bin #Target file directory
-OBJECTS_DIR  = generated_files #Intermediate object files directory
-MOC_DIR      = generated_files #Intermediate moc files directory
+#Target file directory
+DESTDIR     = bin
+#Intermediate file
+OBJECTS_DIR = generated_files
+MOC_DIR     = generated_files
 UI_DIR      = generated_files
 RCC_DIR     = generated_files
 MAKEFILE    = generated_files

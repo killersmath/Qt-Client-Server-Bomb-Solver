@@ -1,11 +1,11 @@
+TARGET = Server
+TEMPLATE = app
+
 # Check if the config file exists
 
 ! include( ../Common/Config.pri) {
-    error( "Couldn't find the common.pri file!" )
+    error( "Couldn't find the Config.pri file!" )
 }
-
-TARGET = server
-TEMPLATE = app
 
 DEPENDPATH += $$PWD/../Common/
 INCLUDEPATH += $$PWD/../Common/

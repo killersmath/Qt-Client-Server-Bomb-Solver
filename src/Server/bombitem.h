@@ -79,6 +79,7 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0) override;
 
     void setupBomb(const int secs);
+    void stopBomb();
 
 private slots:
     void wireCutted(int id);

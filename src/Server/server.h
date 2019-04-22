@@ -23,7 +23,7 @@ public:
     void close();
     SocketListModel* listModel() const;
 
-    void startChallenge();
+    void sendQuestions();
 
 protected:
     void incomingConnection(qintptr socketDescriptor);

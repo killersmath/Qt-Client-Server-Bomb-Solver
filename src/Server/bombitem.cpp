@@ -18,7 +18,7 @@ BombWire::BombWire(const QColor &color, int id, QGraphicsItem *parent) :
 {
     setFlag(ItemClipsToShape, true);
 
-    //setCursor(QCursor(Qt::PointingHandCursor));
+    setCursor(QCursor(Qt::PointingHandCursor));
 }
 
 QRectF BombWire::boundingRect() const
@@ -123,11 +123,15 @@ void BombTimer::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidg
     painter->restore();
 
     // clock number
+
+    const int minutes = _remaindSeconds / 60;
+    const int seconds = _remaindSeconds % 60;
+
     painter->save();
     QFont font = painter->font();
     font.setPixelSize(40);
     painter->setFont(font);
-    painter->drawText(QRectF(-130, -40, 260, 45), Qt::AlignCenter, QString("00:00:%1").arg(_remaindSeconds, 2, 10, QChar('0')));
+    painter->drawText(QRectF(-130, -40, 260, 45), Qt::AlignCenter, QString("00:%1:%2").arg(minutes, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0')));
     painter->restore();
 }
 
@@ -192,9 +196,9 @@ Bomb::Bomb(QGraphicsItem *parent) : QGraphicsObject(parent)
     bWire->setPos(80, 55);
     bWire->setZValue(zValue());
 
-    //connect(rWire, &BombWire::clicked, this, &Bomb::wireCutted);
-    //connect(gWire, &BombWire::clicked, this, &Bomb::wireCutted);
-    //connect(bWire, &BombWire::clicked, this, &Bomb::wireCutted);
+    connect(rWire, &BombWire::clicked, this, &Bomb::wireCutted);
+    connect(gWire, &BombWire::clicked, this, &Bomb::wireCutted);
+    connect(bWire, &BombWire::clicked, this, &Bomb::wireCutted);
 
     connect(bTimer, &BombTimer::timeout, this, &Bomb::explosed);
 
@@ -219,6 +223,12 @@ void Bomb::setupBomb(const int secs)
 {
     _defuseWireID = QRandomGenerator::global()->bounded(3);
     bTimer->setupTimer(secs);
+}
+
+void Bomb::stopBomb()
+{
+    if(bTimer->isRunning())
+        bTimer->stopTimer();
 }
 
 void Bomb::wireCutted(int id)

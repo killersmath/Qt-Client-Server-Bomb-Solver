@@ -251,7 +251,7 @@
        </font>
       </property>
       <property name="text">
-       <string>Clientes</string>
+       <string>Clients</string>
       </property>
       <property name="alignment">
        <set>Qt::AlignCenter</set>

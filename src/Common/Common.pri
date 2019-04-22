@@ -9,7 +9,6 @@ UI_DIR      = generated_files
 RCC_DIR     = generated_files
 MAKEFILE    = generated_files
 
-
 INCLUDEPATH += $$PWD
 
 SOURCES += \

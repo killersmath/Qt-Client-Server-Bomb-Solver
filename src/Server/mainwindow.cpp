@@ -38,78 +38,47 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 void MainWindow::setupWidgets()
 {
-    // Ip Validator
+    // Host Ip Validator
     const QString numberRange = QString("[1-9][0-9]?|1[0-9][0-9]|2[0-5][0-5]");
     QRegularExpression IPrx(QString("^(%1)\\.(0|%2)\\.(0|%3)\\.(0|%4)$").arg(numberRange, numberRange, numberRange, numberRange));
     QValidator *IPvalidator = new QRegularExpressionValidator(IPrx, this);
     hostLineEdit->setValidator(IPvalidator);
 
-    // Looking for Avaliable IP
-
-    //    const QHostAddress& localhost = QHostAddress(QHostAddress::LocalHost);
-    //    foreach (const QHostAddress& address, QNetworkInterface::allAddresses()) {
-    //        if (address.protocol() == QAbstractSocket::IPv4Protocol && address != localhost){
-    //            hostLineEdit->setText(address.toString());
-    //            break;
-    //        }
-    //    }
-
+    // Client List
     listView->setModel(_server.listModel());
 
-    //
     // WELCOME SCENE
-    //
-
     _welcomeScene = new QGraphicsScene(this);
     _welcomeScene->setItemIndexMethod(QGraphicsScene::NoIndex);
-
     _welcomeScene->addText("Click on New Game Button to start the game.", QFont("Arial", 15));
-
     _welcomeScene->setSceneRect(_welcomeScene->itemsBoundingRect());
 
-    //
     // GAME SCENE
-    //
-
     _gameScene = new QGraphicsScene(this);
     _gameScene->setItemIndexMethod(QGraphicsScene::NoIndex);
-
     _bomb = new Bomb;
     _gameScene->addItem(_bomb);
-
     _gameScene->setSceneRect(_gameScene->itemsBoundingRect());
 
-    //
-    //  ENDING SCENES
-    //
-
+    //  GOOD ENDING SCENE
     _goodEndScene = new QGraphicsScene(this);
     _goodEndScene->setItemIndexMethod(QGraphicsScene::NoIndex);
-
     QGraphicsTextItem* GTitem = _goodEndScene->addText("The Bomb has Been Defused", QFont("Arial", 18));
     GTitem->setDefaultTextColor(QColor(0, 255, 0));
-
     _goodEndScene->setSceneRect(_goodEndScene->itemsBoundingRect());
 
-
+    // BAD ENDING SCENE
     _badEndScene = new QGraphicsScene(this);
     _badEndScene->setItemIndexMethod(QGraphicsScene::NoIndex);
-
     QGraphicsTextItem* BTitem = _badEndScene->addText("KABBUMMM", QFont("Arial", 18));
     BTitem->setDefaultTextColor(QColor(255, 0, 0));
-
-
     _badEndScene->setSceneRect(_badEndScene->itemsBoundingRect());
 
-    //
     // GRAPHICS VIEW SETTINGS
-    //
-
-    graphicsView->setScene(_welcomeScene);
-
     graphicsView->setBackgroundBrush(QBrush(Qt::gray));
     graphicsView->setRenderHint(QPainter::Antialiasing);
     graphicsView->setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
+    graphicsView->setScene(_welcomeScene);
 }
 
 void MainWindow::setupConnections()
@@ -148,7 +117,7 @@ void MainWindow::setupConnections()
 
     connect(&_server, &Server::challangeSolved, _bomb, &Bomb::defused);
 
-    connect(_server.listModel(), &SocketListModel::socketAdded, this, [this](const QString &host, quint16 port){
+    connect(_server.listModel(), &SocketListModel::socketAdded, this, [=](const QString &host, quint16 port){
         const QString message = QString("%1:%2 has been connected.").arg(host).arg(port);
         windowStatusBar->showMessage(message, 2000);
     });
@@ -166,21 +135,36 @@ void MainWindow::loadSettings()
     settings.beginGroup("window");
 
     if(settings.contains("geometry"))
-      restoreGeometry(settings.value("geometry").toByteArray());
+        restoreGeometry(settings.value("geometry").toByteArray());
 
     if(settings.contains("state"))
-      restoreState(settings.value("state").toByteArray());
+        restoreState(settings.value("state").toByteArray());
 
     settings.endGroup();
 
     settings.beginGroup("server");
-    const QString serverHost = settings.value("host", "127.0.0.1").toString();
+    QString serverHost = settings.value("host", "").toString();
     const int serverPort = settings.value("port", 1024).toInt();
     settings.endGroup();
 
     settings.beginGroup("bomb");
-    const int bombTimer = settings.value("timer", 1024).toInt();
+    const int bombTimer = settings.value("timer", 15).toInt();
     settings.endGroup();
+
+    if(serverHost.isEmpty()){
+        QList<QHostAddress> ipAddressesList = QNetworkInterface::allAddresses();
+        // Find the first no local address
+        for (int i = 0; i < ipAddressesList.size(); ++i) {
+            if (ipAddressesList.at(i) != QHostAddress::LocalHost &&
+                    ipAddressesList.at(i).toIPv4Address()) {
+                serverHost = ipAddressesList.at(i).toString();
+                break;
+            }
+        }
+        // If din't found, use Localhost address
+        if (serverHost.isEmpty())
+            serverHost = QHostAddress(QHostAddress::LocalHost).toString();
+    }
 
     hostLineEdit->setText(serverHost);
     portSpinBox->setValue(serverPort);
@@ -214,9 +198,8 @@ void MainWindow::newGameButtonClicked()
 {
     newGameAction->setEnabled(false);
 
-    _server.startChallenge();
+    _server.sendQuestions();
     graphicsView->setScene(_gameScene);
-
     _bomb->setupBomb(bombTimerSpinBox->cleanText().toInt());
 }
 
@@ -233,6 +216,8 @@ void MainWindow::connectServerButtonClicked()
     }
     else{
         _server.close();
+        graphicsView->setScene(_welcomeScene);
+        _bomb->stopBomb();
         connectServerButton->setText(QStringLiteral("Start Server"));
         newGameAction->setEnabled(false);
         hostLineEdit->setEnabled(true);
