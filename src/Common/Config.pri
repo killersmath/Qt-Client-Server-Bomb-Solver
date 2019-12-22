@@ -14,6 +14,7 @@ MAKEFILE    = generated_files
 win32 {
     TARGET_CUSTOM_EXT = .exe
     DEPLOY_COMMAND = windeployqt
+    CONFIG -= debug_and_release debug_and_release_target
 }
 
 macx {
