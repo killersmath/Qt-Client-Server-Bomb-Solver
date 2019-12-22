@@ -31,7 +31,7 @@ signals:
     void socketRemoved(const QString& host, quint16 port);
 
 private:
-    DataList _dataList;
+    DataList _socketList;
 };
 
 #endif // IPLISTMODEL_H

@@ -9,7 +9,9 @@
 
 #include <QScopedPointer>
 
-Server::Server(QObject *parent) : QTcpServer(parent), _listModel(new SocketListModel(this))
+Server::Server(QObject *parent) :
+    QTcpServer(parent),
+    _listModel(new SocketListModel(this))
 {
 
 }
@@ -17,45 +19,16 @@ Server::Server(QObject *parent) : QTcpServer(parent), _listModel(new SocketListM
 Server::~Server()
 {
     close();
-    _listModel->deleteLater();
+    delete _listModel;
 }
 
 void Server::close()
 {
-    if(isListening()){
-        QTcpServer::close();
-        _listModel->clear();
-    }
-}
+    if(!isListening())
+        return;
 
-SocketListModel *Server::listModel() const
-{
-    return _listModel;
-}
-
-void Server::sendQuestions()
-{
-    SocketListModel::DataList dataList = _listModel->dataList();
-
-    _questions.clear();
-
-    for(SocketListModel::DataInfo data : dataList){
-        //int a = QRandomGenerator::global()->bounded(10, 120);
-        int a = 10;
-        int b = QRandomGenerator::global()->bounded(10, 120);
-        int answer = a*b;
-        const QString question = QString("%1 * %2").arg(a).arg(b);
-
-        // data.second == Socket*
-        _questions.insert(data.second, qMakePair(question, answer));
-
-        QJsonDocument doc;
-        QJsonObject obj;
-        obj["type"] = "question";
-        obj["text"] = question;
-        doc.setObject(obj);
-        data.second->sendData(doc.toJson(QJsonDocument::Compact));
-    }
+    QTcpServer::close();
+    _listModel->clear();
 }
 
 void Server::incomingConnection(qintptr socketDescriptor)
@@ -69,87 +42,138 @@ void Server::incomingConnection(qintptr socketDescriptor)
         return;
     }
 
-    SocketThread *socketThread = new SocketThread(socketPointer.get());
+    setupSocketThread(new SocketThread(socketPointer.take()));
+}
 
+void Server::setupSocketThread(SocketThread *socketThread)
+{
     connect(socketThread, &SocketThread::finished, this, &Server::onSocketThreadFinished);
     connect(socketThread, &SocketThread::finished, socketThread, &SocketThread::deleteLater);
-    connect(socketThread, &SocketThread::receiveData, this, &Server::onReveiceData);
+    connect(socketThread, &SocketThread::receivedData, this, &Server::processData);
 
-    _listModel->addSocket(qMakePair(socketPointer->peerAddress().toString(), socketPointer->peerPort()),socketThread);
+    _listModel->addSocket(qMakePair(socketThread->getHost().toString(), socketThread->getPort()), socketThread);
 
     socketThread->start();
-
-    socketPointer.take(); // remove the pointer from scope pointer
 }
 
 void Server::onSocketThreadFinished()
 {
     SocketThread *socketThread = dynamic_cast<SocketThread*>(sender());
 
-    if(socketThread){
-        _listModel->removeSocket(socketThread);
+    if(!socketThread)
+        return;
+
+    _listModel->removeSocket(socketThread);
+
+}
+
+void Server::processData(const QByteArray &data)
+{
+    const QJsonDocument doc = QJsonDocument::fromJson(data);
+    const QJsonObject obj = doc.object();
+    const QJsonValue typeJsonValue = obj["type"];
+
+    if (typeJsonValue.isNull() || !typeJsonValue.isString())
+        return;
+
+    const QString type = typeJsonValue.toString();
+
+    if(isEqual(type, "answer")){
+        SocketThread *socketThread = dynamic_cast<SocketThread*>(sender());
+
+        if(!socketThread) return;
+
+        processAnswer(socketThread, obj["answer"].toString());
     }
 }
 
-void Server::onReveiceData(const QByteArray &data)
+void Server::processAnswer(SocketThread *sThread, const QString& answer)
 {
-    QJsonDocument jsonDocument = QJsonDocument::fromJson(data);
-    QJsonObject jsonObject = jsonDocument.object();
+    bool isNumber;
+    int value = answer.toInt(&isNumber);
 
-    const QJsonValue typeVal = jsonObject.value(QLatin1String("type"));
-    if (typeVal.isNull() || !typeVal.isString())
+    if(!isNumber)
         return;
 
-    if(typeVal.toString().compare(QLatin1String("answer"), Qt::CaseInsensitive) == 0){
-        bool ok;
-        int number = jsonObject["value"].toString().toInt(&ok);
+    const QPair<QString, int> quiz = _questions[sThread];
+    const int quizAnswer = quiz.second;
 
-        if(ok){
-            SocketThread *socketThread = dynamic_cast<SocketThread*>(sender());
-            if(socketThread){
-                if(_questions[socketThread].second == number){
-                    _questions.remove(socketThread);
+    if(quizAnswer == value){
+        _questions.remove(sThread);
 
-                    if(!_questions.isEmpty()){
-                        QJsonDocument jsonDocument;
-                        QJsonObject jsonObject;
-                        jsonObject["type"] = "solved";
-                        jsonDocument.setObject(jsonObject);
-                        socketThread->sendData(jsonDocument.toJson(QJsonDocument::Compact));
-                    }
-                    else{
-                        emit challangeSolved();
-                    }
-                }
-            }
+        if(!_questions.isEmpty()){
+            sThread->sendData(prepareSolvedJson());
+        }
+        else{
+            emit quizSolved();
         }
     }
 }
 
+void Server::newGame()
+{
+    _questions.clear();
+
+    for(const SocketListModel::DataInfo& data : _listModel->dataList()){
+        const QPair<QString, int> quiz = generateQuiz();
+        SocketThread *socketThread = data.second;
+
+        _questions.insert(socketThread, quiz);
+        socketThread->sendData(prepareQuestionJson(quiz.first));
+    }
+}
+
+QPair<QString, int> Server::generateQuiz()
+{
+    //int a = QRandomGenerator::global()->bounded(10, 120);
+    int a = 10;
+    int b = QRandomGenerator::global()->bounded(10, 120);
+    int answer = a*b;
+
+    const QString question = QString("%1 * %2").arg(a).arg(b);
+
+    return qMakePair(question, answer);
+}
+
 void Server::onBombDefused()
 {
-    SocketListModel::DataList dataList = _listModel->dataList();
-
-    for(SocketListModel::DataInfo data : dataList){
-        QJsonDocument doc;
-        QJsonObject obj;
-        obj["type"] = "bombstatus";
-        obj["defused"] = true;
-        doc.setObject(obj);
-        data.second->sendData(doc.toJson(QJsonDocument::Compact));
+    for(const SocketListModel::DataInfo& data : _listModel->dataList()){
+        data.second->sendData(prepareBombStatusJson(true));
     }
 }
 
 void Server::onBombExplosed()
 {
-    SocketListModel::DataList dataList = _listModel->dataList();
-
-    for(SocketListModel::DataInfo data : dataList){
-        QJsonDocument doc;
-        QJsonObject obj;
-        obj["type"] = "bombstatus";
-        obj["defused"] = false;
-        doc.setObject(obj);
-        data.second->sendData(doc.toJson(QJsonDocument::Compact));
+    for(const SocketListModel::DataInfo& data : _listModel->dataList()){
+        data.second->sendData(prepareBombStatusJson(false));
     }
+}
+
+QByteArray Server::prepareQuestionJson(const QString &question)
+{
+    QJsonDocument doc;
+    QJsonObject obj;
+    obj["type"] = "question";
+    obj["question"] = question;
+    doc.setObject(obj);
+    return doc.toJson(QJsonDocument::Compact);
+}
+
+QByteArray Server::prepareSolvedJson()
+{
+    QJsonDocument doc;
+    QJsonObject obj;
+    obj["type"] = "solved";
+    doc.setObject(obj);
+    return doc.toJson(QJsonDocument::Compact);
+}
+
+QByteArray Server::prepareBombStatusJson(bool defused)
+{
+    QJsonDocument doc;
+    QJsonObject obj;
+    obj["type"] = "bombstatus";
+    obj["defused"] = defused;
+    doc.setObject(obj);
+    return doc.toJson(QJsonDocument::Compact);
 }

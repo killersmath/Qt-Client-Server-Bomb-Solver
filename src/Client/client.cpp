@@ -7,39 +7,40 @@
 
 #include <QDebug>
 
-Client::Client(QObject *parent) : QObject(parent), _connected(false)
-{
+#include <QJsonObject>
+#include <QJsonDocument>
 
+Client::Client(QObject *parent) :
+    QObject(parent),
+    _socketThread(new SocketThread(new QTcpSocket)),
+    _connected(false)
+{
+    QObject::connect(_socketThread, &SocketThread::connected, this, &Client::onClientConnected, Qt::QueuedConnection);
+    QObject::connect(_socketThread, &SocketThread::disconnected, this, &Client::onClientDisconnected, Qt::QueuedConnection);
+    QObject::connect(this, &Client::disconnect, _socketThread, &SocketThread::disconnectFromHost);
+    QObject::connect(_socketThread, &SocketThread::socketError, this, &Client::socketError);
+
+    QObject::connect(this, &Client::sendData, _socketThread, &SocketThread::sendData, Qt::QueuedConnection);
+    QObject::connect(_socketThread, &SocketThread::receivedData, this, &Client::processData, Qt::QueuedConnection);
 }
 
-bool Client::isConnected()
+Client::~Client()
 {
-    return _connected;
+    if(_connected)
+        _socketThread->disconnectFromHost();
+
+    if(_socketThread->isRunning()){
+        _socketThread->terminate();
+        _socketThread->wait();
+    }
+
+    delete _socketThread;
 }
 
 void Client::connect(const QHostAddress &host, quint16 port)
 {
-    QScopedPointer<QTcpSocket> socketPointer(new QTcpSocket);
-
-    _socketThread = new SocketThread(socketPointer.get());
-
-    QObject::connect(_socketThread, &SocketThread::connected, this, &Client::onClientConnected, Qt::QueuedConnection);
-    QObject::connect(_socketThread, &SocketThread::disconnected, this, &Client::onClientDisconnected, Qt::QueuedConnection);
-
-    QObject::connect(this, &Client::sendData, _socketThread, &SocketThread::sendData, Qt::QueuedConnection);
-    QObject::connect(_socketThread, &SocketThread::receiveData, this, &Client::receiveData, Qt::QueuedConnection);
-
-    QObject::connect(_socketThread, &SocketThread::socketError, this, &Client::socketError);
-
-    QObject::connect(this, &Client::disconnect, _socketThread, &SocketThread::disconnectFromHost);
-
-    QObject::connect(_socketThread, &SocketThread::finished, _socketThread, &SocketThread::deleteLater, Qt::DirectConnection);
-
     _socketThread->start();
-
-    socketPointer->connectToHost(host, port);
-
-    socketPointer.take();
+    _socketThread->connectToHost(host, port);
 }
 
 void Client::onClientConnected()
@@ -53,3 +54,42 @@ void Client::onClientDisconnected()
     _connected = false;
     emit disconnected();
 }
+
+void Client::processData(const QByteArray &data)
+{
+    const QJsonDocument doc = QJsonDocument::fromJson(data);
+    const QJsonObject obj = doc.object();
+    const QJsonValue typeJsonValue = obj["type"];
+
+    if (typeJsonValue.isNull() || !typeJsonValue.isString())
+        return;
+
+    const QString type = typeJsonValue.toString();
+
+    if (isEqual(type, "question")) {
+        emit newQuestion(obj["question"].toString());
+    }
+    else if(isEqual(type, "solved")){
+        emit solved();
+    }
+    else if(isEqual(type, "bombstatus")){
+        emit bombStatusChanged(obj["defused"].toBool());
+    }
+}
+
+void Client::sendAnswer(const QString &answer)
+{
+    emit sendData(prepareAnswerJson(answer));
+}
+
+QByteArray Client::prepareAnswerJson(const QString &answer)
+{
+    QJsonDocument doc;
+    QJsonObject obj;
+    obj["type"] = "answer";
+    obj["answer"] = answer;
+    doc.setObject(obj);
+
+    return doc.toJson(QJsonDocument::Compact);
+}
+

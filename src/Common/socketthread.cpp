@@ -23,6 +23,7 @@ SocketThread::SocketThread(QTcpSocket *socket, QObject *parent) : QThread(parent
 #else
     qDebug() << QString("%1:%2").arg(_socket->peerAddress().toString()).arg(_socket->peerPort()) << " Connected";
 #endif
+
 }
 
 SocketThread::~SocketThread()
@@ -31,6 +32,21 @@ SocketThread::~SocketThread()
         _socket->close();
 
     delete _socket;
+}
+
+QHostAddress SocketThread::getHost()
+{
+    return _socket->peerAddress();
+}
+
+quint16 SocketThread::getPort()
+{
+    return _socket->peerPort();
+}
+
+void SocketThread::connectToHost(const QHostAddress &host, quint16 port)
+{
+    _socket->connectToHost(host, port);
 }
 
 void SocketThread::onDisconnectFromHost()
@@ -61,8 +77,9 @@ void SocketThread::onReadyRead()
             QJsonParseError parseError;
             const QJsonDocument jsonDoc = QJsonDocument::fromJson(data, &parseError);
             if (parseError.error == QJsonParseError::NoError) {
-                if (jsonDoc.isObject())
-                    emit receiveData(data);
+                if (jsonDoc.isObject()){
+                    emit receivedData(data);
+                }
             }
         } else {
             break;

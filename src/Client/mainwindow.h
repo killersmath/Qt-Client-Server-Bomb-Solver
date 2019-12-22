@@ -24,15 +24,19 @@ public:
 protected:
     void closeEvent(QCloseEvent *event);
 
-public slots:
+private slots:
     void onConnectButtonClicked();
 
     void onClientConnected();
     void onClientDisconnected();
+    void onClientSocketError(const QTcpSocket::SocketError error);
 
     void onSendButtonClicked();
 
-    void onClientReceiveData(const QByteArray &data);
+    void onNewQuestion(const QString& question);
+    void onSolved();
+    void onBombStatusChanged(bool defused);
+
 
 private:
     const QString _settingsFileLocation;
